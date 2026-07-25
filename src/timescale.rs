@@ -130,6 +130,24 @@ impl TimeScale {
         TimeScale::Nanosecond
     }
 
+    /// From seconds as f64 for summary output.
+    /// TimeScale::TenSeconds and TimeScale::TenMinutes are not used for summary output. Because it is looked weird to see "10 sec" or "10 min" in summary output.
+    pub fn from_f64_summary(seconds: f64) -> Self {
+        for ts in &[
+            TimeScale::Hour,
+            TimeScale::Minute,
+            TimeScale::Second,
+            TimeScale::Millisecond,
+            TimeScale::Microsecond,
+            TimeScale::Nanosecond,
+        ] {
+            if seconds > ts.as_secs_f64() {
+                return *ts;
+            }
+        }
+        TimeScale::Nanosecond
+    }
+
     pub fn from_elapsed(duration: Duration) -> Self {
         Self::from_f64(duration.as_secs_f64())
     }
