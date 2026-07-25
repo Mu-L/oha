@@ -503,7 +503,7 @@ fn print_summary<W: Write>(
         timescale
     } else {
         // Use max latency (slowest request)
-        TimeScale::from_f64(latency_stat.max())
+        TimeScale::from_f64_summary(latency_stat.max())
     };
     writeln!(
         w,
