@@ -28,7 +28,14 @@ rustls = [
     "dep:rustls-pki-types",
 ]
 vsock = ["dep:tokio-vsock"]
-http3 = ["dep:h3", "dep:h3-quinn", "dep:quinn-proto", "dep:quinn", "dep:http"]
+http3 = [
+    "dep:h3",
+    "dep:h3-quinn",
+    "dep:quinn-proto",
+    "dep:quinn",
+    "dep:http",
+    "dep:socket2",
+]
 
 [dependencies]
 anyhow = "1.0.86"
@@ -70,6 +77,7 @@ quinn = { version = "0.11.7", optional = true, features = [
     "aws-lc-rs",
     "runtime-tokio",
 ] }
+socket2 = { version = "0.6", optional = true }
 
 base64 = "0.22.1"
 rand = "0.10.2"

@@ -106,7 +106,7 @@ impl Dns {
     }
 
     /// Perform a DNS lookup for a given url and returns (ip_addr, port)
-    async fn lookup<R: Rng>(
+    pub(crate) async fn lookup<R: Rng>(
         &self,
         url: &Url,
         rng: &mut R,
@@ -501,17 +501,6 @@ impl Client {
     ) -> Result<(Instant, Stream), ClientError> {
         let timeout_duration = self.connect_timeout;
 
-        #[cfg(feature = "http3")]
-        if http_version == http::Version::HTTP_3 {
-            let addr = self.dns.lookup(url, rng).await?;
-            let dns_lookup = Instant::now();
-            let stream = tokio::time::timeout(timeout_duration, self.quic_client(addr, url)).await;
-            return match stream {
-                Ok(Ok(stream)) => Ok((dns_lookup, stream)),
-                Ok(Err(err)) => Err(err),
-                Err(_) => Err(ClientError::Timeout),
-            };
-        }
         if url.scheme() == "https" {
             let addr = self.dns.lookup(url, rng).await?;
             let dns_lookup = Instant::now();

@@ -69,7 +69,14 @@ impl Client {
         rng: &mut R,
     ) -> Result<(ConnectionTime, SendRequestHttp3), ClientError> {
         let start = std::time::Instant::now();
-        let (dns_lookup, stream) = self.client(url, rng, http::Version::HTTP_3).await?;
+        let addr = self.dns.lookup(url, rng).await?;
+        let dns_lookup = std::time::Instant::now();
+        let stream =
+            match tokio::time::timeout(self.connect_timeout, self.quic_client(addr, url)).await {
+                Ok(Ok(stream)) => stream,
+                Ok(Err(err)) => return Err(err),
+                Err(_) => return Err(ClientError::Timeout),
+            };
         let send_request = stream.handshake_http3().await?;
         let dialup = std::time::Instant::now();
         Ok((
@@ -81,17 +88,19 @@ impl Client {
         ))
     }
 
-    pub(crate) async fn quic_client(
-        &self,
-        addr: (std::net::IpAddr, u16),
-        url: &Url,
-    ) -> Result<Stream, ClientError> {
+    fn quic_endpoint(&self, is_ipv6: bool) -> Result<quinn::Endpoint, ClientError> {
         let endpoint_config = h3_quinn::quinn::EndpointConfig::default();
-        let local_socket = if addr.0.is_ipv6() {
+        let local_socket = if is_ipv6 {
             UdpSocket::bind("[::]:0").expect("couldn't bind to address")
         } else {
             UdpSocket::bind("0.0.0.0:0").expect("couldn't bind to address")
         };
+        // Enlarge UDP buffers as far as the OS allows to avoid packet loss at high rates.
+        {
+            let socket_ref = socket2::SockRef::from(&local_socket);
+            let _ = socket_ref.set_recv_buffer_size(8 * 1024 * 1024);
+            let _ = socket_ref.set_send_buffer_size(8 * 1024 * 1024);
+        }
         // If we can set the right build flags, we can use `h3_quinn::quinn::Endpoint::client` instead
         let mut client_endpoint = h3_quinn::quinn::Endpoint::new(
             endpoint_config,
@@ -102,11 +111,28 @@ impl Client {
         .unwrap();
 
         let tls_config = self.rustls_configs.config(http::Version::HTTP_3).clone();
-        let client_config = quinn::ClientConfig::new(Arc::new(
+        let mut client_config = quinn::ClientConfig::new(Arc::new(
             quinn::crypto::rustls::QuicClientConfig::try_from(tls_config)
                 .map_err(Http3Error::from)?,
         ));
+        let mut transport_config = quinn::TransportConfig::default();
+        transport_config
+            // Align flow-control windows with the HTTP/2 client (from nghttp2's default)
+            .stream_receive_window(quinn::VarInt::from_u32((1 << 30) - 1))
+            .send_window((1 << 30) - 1)
+            // QUIC datagrams are not used
+            .datagram_receive_buffer_size(None);
+        client_config.transport_config(Arc::new(transport_config));
         client_endpoint.set_default_client_config(client_config);
+        Ok(client_endpoint)
+    }
+
+    pub(crate) async fn quic_client(
+        &self,
+        addr: (std::net::IpAddr, u16),
+        url: &Url,
+    ) -> Result<Stream, ClientError> {
+        let client_endpoint = self.quic_endpoint(addr.0.is_ipv6())?;
 
         let remote_socket_address = SocketAddr::new(addr.0, addr.1);
         let server_name = url.host_str().ok_or(ClientError::HostNotFound)?;
@@ -242,7 +268,7 @@ pub(crate) async fn send_debug_request_http3(
 pub(crate) async fn parallel_work_http3(
     n_connections: usize,
     n_http_parallel: usize,
-    rx: AsyncReceiver<Option<Instant>>,
+    rx: Option<AsyncReceiver<Option<Instant>>>,
     report_tx: kanal::Sender<Result<RequestResult, ClientError>>,
     client: Arc<Client>,
     deadline: Option<std::time::Instant>,
@@ -278,10 +304,11 @@ pub(crate) async fn parallel_work_http3(
  * For use in the 'slow' functions - send a report of every response in real time for display to the end-user.
  * Semaphore is closed to shut down all the tasks.
  * Very similar to how http2 loops work, just that we explicitly spawn the HTTP3 connection driver.
+ * When `rx` is `None`, requests are issued continuously until the semaphore is closed.
  */
 async fn create_and_load_up_single_connection_http3(
     n_http_parallel: usize,
-    rx: AsyncReceiver<Option<Instant>>,
+    rx: Option<AsyncReceiver<Option<Instant>>>,
     report_tx: kanal::Sender<Result<RequestResult, ClientError>>,
     client: Arc<Client>,
     s: Arc<Semaphore>,
@@ -302,22 +329,40 @@ async fn create_and_load_up_single_connection_http3(
                         let s = s.clone();
                         tokio::spawn(async move {
                             // This is where HTTP3 loops to make all the requests for a given client and worker
-                            while let Ok(start_time_option) = rx.recv().await {
-                                let (is_cancel, is_reconnect) = work_http3_once(
-                                    &client,
-                                    &mut client_state,
-                                    &report_tx,
-                                    connection_time,
-                                    start_time_option,
-                                )
-                                .await;
+                            if let Some(rx) = rx {
+                                while let Ok(start_time_option) = rx.recv().await {
+                                    let (is_cancel, is_reconnect) = work_http3_once(
+                                        &client,
+                                        &mut client_state,
+                                        &report_tx,
+                                        connection_time,
+                                        start_time_option,
+                                    )
+                                    .await;
 
-                                let is_cancel = is_cancel || s.is_closed();
-                                if is_cancel || is_reconnect {
-                                    return is_cancel;
+                                    let is_cancel = is_cancel || s.is_closed();
+                                    if is_cancel || is_reconnect {
+                                        return is_cancel;
+                                    }
+                                }
+                                true
+                            } else {
+                                loop {
+                                    let (is_cancel, is_reconnect) = work_http3_once(
+                                        &client,
+                                        &mut client_state,
+                                        &report_tx,
+                                        connection_time,
+                                        None,
+                                    )
+                                    .await;
+
+                                    let is_cancel = is_cancel || s.is_closed();
+                                    if is_cancel || is_reconnect {
+                                        return is_cancel;
+                                    }
                                 }
                             }
-                            true
                         })
                     })
                     .collect::<Vec<_>>();
@@ -356,11 +401,15 @@ async fn create_and_load_up_single_connection_http3(
             Err(err) => {
                 if s.is_closed() {
                     break;
+                } else if let Some(rx) = &rx {
                     // Consume a task
-                } else if rx.recv().await.is_ok() {
-                    report_tx.send(Err(err)).unwrap();
+                    if rx.recv().await.is_ok() {
+                        report_tx.send(Err(err)).unwrap();
+                    } else {
+                        return;
+                    }
                 } else {
-                    return;
+                    report_tx.send(Err(err)).unwrap();
                 }
             }
         }
@@ -584,8 +633,15 @@ pub async fn work(
         drop(tx);
         Ok::<(), kanal::SendError>(())
     };
-    let futures =
-        parallel_work_http3(n_connections, n_http2_parallel, rx, report_tx, client, None).await;
+    let futures = parallel_work_http3(
+        n_connections,
+        n_http2_parallel,
+        Some(rx),
+        report_tx,
+        client,
+        None,
+    )
+    .await;
     n_tasks_emitter.await.unwrap();
     for f in futures {
         let _ = f.await;
@@ -640,8 +696,15 @@ pub async fn work_with_qps(
     };
 
     let rx = rx.to_async();
-    let futures =
-        parallel_work_http3(n_connections, n_http_parallel, rx, report_tx, client, None).await;
+    let futures = parallel_work_http3(
+        n_connections,
+        n_http_parallel,
+        Some(rx),
+        report_tx,
+        client,
+        None,
+    )
+    .await;
     work_queue.await.unwrap();
     for f in futures {
         let _ = f.await;
@@ -700,8 +763,15 @@ pub async fn work_with_qps_latency_correction(
     };
 
     let rx = rx.to_async();
-    let futures =
-        parallel_work_http3(n_connections, n_http2_parallel, rx, report_tx, client, None).await;
+    let futures = parallel_work_http3(
+        n_connections,
+        n_http2_parallel,
+        Some(rx),
+        report_tx,
+        client,
+        None,
+    )
+    .await;
     for f in futures {
         let _ = f.await;
     }
@@ -716,14 +786,10 @@ pub async fn work_until(
     n_http_parallel: usize,
     _wait_ongoing_requests_after_deadline: bool,
 ) {
-    let (tx, rx) = kanal::bounded_async::<Option<Instant>>(5000);
-    // This emitter is used for H3 to give it unlimited tokens to emit work.
-    let cancel_token = tokio_util::sync::CancellationToken::new();
-    let emitter_handle = endless_emitter(cancel_token.clone(), tx).await;
     let futures = parallel_work_http3(
         n_connections,
         n_http_parallel,
-        rx,
+        None,
         report_tx.clone(),
         client.clone(),
         Some(dead_line),
@@ -732,10 +798,6 @@ pub async fn work_until(
     for f in futures {
         let _ = f.await;
     }
-    // Cancel the emitter when we're done with the futures
-    cancel_token.cancel();
-    // Wait for the emitter to exit cleanly
-    let _ = emitter_handle.await;
 }
 
 /// Run until dead_line by n workers limit to qps works in a second
@@ -791,7 +853,7 @@ pub async fn work_until_with_qps(
     let futures = parallel_work_http3(
         n_connections,
         n_http2_parallel,
-        rx,
+        Some(rx),
         report_tx,
         client,
         Some(dead_line),
@@ -855,7 +917,7 @@ pub async fn work_until_with_qps_latency_correction(
     let futures = parallel_work_http3(
         n_connections,
         n_http2_parallel,
-        rx,
+        Some(rx),
         report_tx,
         client,
         Some(dead_line),
@@ -864,27 +926,6 @@ pub async fn work_until_with_qps_latency_correction(
     for f in futures {
         let _ = f.await;
     }
-}
-
-#[cfg(feature = "http3")]
-async fn endless_emitter(
-    cancellation_token: tokio_util::sync::CancellationToken,
-    tx: kanal::AsyncSender<Option<Instant>>,
-) -> tokio::task::JoinHandle<()> {
-    tokio::spawn(async move {
-        loop {
-            tokio::select! {
-                _ = cancellation_token.cancelled() => {
-                    break;
-                }
-                _ = async {
-                    // As we our `work_http2_once` function is limited by the number of `tx` we send, but we only
-                    // want to stop when our semaphore is closed, just dump unlimited `Nones` into the tx to un-constrain it
-                    let _ = tx.send(None).await;
-                } => {}
-            }
-        }
-    })
 }
 
 pub mod fast {
