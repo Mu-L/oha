@@ -332,6 +332,12 @@ Note: if used several times for the same host:port:target_host:target_port, a ra
         short = 'u'
     )]
     time_unit: Option<TimeScale>,
+    #[arg(
+        help = "Number of native OS threads used by the async runtime (tokio).
+Takes precedence over the TOKIO_WORKER_THREADS environment variable. When neither is set, the number of physical CPU cores is used.",
+        long = "worker-threads"
+    )]
+    pub worker_threads: Option<std::num::NonZeroUsize>,
 }
 
 pub async fn run(mut opts: Opts) -> anyhow::Result<()> {

@@ -230,6 +230,9 @@ Options:
           Output format [default: text] [possible values: text, json, csv, quiet]
   -u, --time-unit <TIME_UNIT>
           Time unit to be used. If not specified, the time unit is determined automatically. This option affects only text format. [possible values: ns, us, ms, s, m, h]
+      --worker-threads <WORKER_THREADS>
+          Number of native OS threads used by the async runtime (tokio).
+          Takes precedence over the TOKIO_WORKER_THREADS environment variable. When neither is set, the number of physical CPU cores is used.
   -h, --help
           Print help
   -V, --version

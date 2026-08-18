@@ -65,6 +65,28 @@ fn test_no_color_cli_flag() {
     assert!(matches.get_flag("no_color"));
 }
 
+#[test]
+fn test_worker_threads_cli_flag() {
+    use clap::Parser;
+
+    // Unset by default.
+    let opts = oha::Opts::try_parse_from(["oha", "http://example.com"]).unwrap();
+    assert_eq!(opts.worker_threads, None);
+
+    // A positive value is parsed.
+    let opts =
+        oha::Opts::try_parse_from(["oha", "--worker-threads", "4", "http://example.com"]).unwrap();
+    assert_eq!(opts.worker_threads.map(|n| n.get()), Some(4));
+
+    // Zero and negative values are rejected.
+    assert!(
+        oha::Opts::try_parse_from(["oha", "--worker-threads", "0", "http://example.com"]).is_err()
+    );
+    assert!(
+        oha::Opts::try_parse_from(["oha", "--worker-threads", "-1", "http://example.com"]).is_err()
+    );
+}
+
 // Port 5111- is reserved for testing
 static PORT: AtomicU16 = AtomicU16::new(5111);
 
