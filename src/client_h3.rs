@@ -945,9 +945,12 @@ pub mod fast {
         n_tasks: usize,
         n_connections: usize,
         n_http_parallel: usize,
+        worker_threads: Option<std::num::NonZeroUsize>,
     ) {
         let counter = Arc::new(AtomicIsize::new(n_tasks as isize));
-        let num_threads = num_cpus::get_physical();
+        let num_threads = worker_threads
+            .map(|n| n.get())
+            .unwrap_or_else(num_cpus::get_physical);
         let connections = (0..num_threads).filter_map(|i| {
             let num_connection = n_connections / num_threads
                 + (if (n_connections % num_threads) > i {
@@ -1008,8 +1011,11 @@ pub mod fast {
         n_connections: usize,
         n_http_parallel: usize,
         wait_ongoing_requests_after_deadline: bool,
+        worker_threads: Option<std::num::NonZeroUsize>,
     ) {
-        let num_threads = num_cpus::get_physical();
+        let num_threads = worker_threads
+            .map(|n| n.get())
+            .unwrap_or_else(num_cpus::get_physical);
 
         let is_end = Arc::new(AtomicBool::new(false));
         let connections = (0..num_threads).filter_map(|i| {

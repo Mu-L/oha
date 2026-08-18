@@ -913,6 +913,16 @@ async fn test_query_limit_with_time_limit() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn test_worker_threads_fast_mode() {
+    // --no-tui fixed-count runs go through the fast-mode workers; pinning the
+    // runtime thread count with --worker-threads must not drop any requests.
+    assert_eq!(
+        test_request_count(&["-n", "20", "--worker-threads", "2"]).await,
+        20
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn test_http_versions() {
     assert_eq!(get_req("/", &[]).await.version(), http::Version::HTTP_11);
     assert_eq!(

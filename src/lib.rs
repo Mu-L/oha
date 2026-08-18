@@ -691,6 +691,7 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
                     n_requests,
                     n_connections,
                     n_http2_parallel,
+                    opts.worker_threads,
                 )
                 .await;
 
@@ -720,6 +721,7 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
                     n_connections,
                     n_http2_parallel,
                     wait_ongoing_requests_after_deadline,
+                    opts.worker_threads,
                 )
                 .await;
 
