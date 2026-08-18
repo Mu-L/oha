@@ -69,14 +69,14 @@ fn test_no_color_cli_flag() {
 fn test_worker_threads_cli_flag() {
     use clap::Parser;
 
-    // Unset by default.
+    // Defaults to the number of physical CPU cores when unset.
     let opts = oha::Opts::try_parse_from(["oha", "http://example.com"]).unwrap();
-    assert_eq!(opts.worker_threads, None);
+    assert_eq!(opts.worker_threads.get(), num_cpus::get_physical());
 
     // A positive value is parsed.
     let opts =
         oha::Opts::try_parse_from(["oha", "--worker-threads", "4", "http://example.com"]).unwrap();
-    assert_eq!(opts.worker_threads.map(|n| n.get()), Some(4));
+    assert_eq!(opts.worker_threads.get(), 4);
 
     // Zero and negative values are rejected.
     assert!(

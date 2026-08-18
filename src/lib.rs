@@ -333,11 +333,13 @@ Note: if used several times for the same host:port:target_host:target_port, a ra
     )]
     time_unit: Option<TimeScale>,
     #[arg(
-        help = "Number of native OS threads used by the async runtime (tokio).
-Takes precedence over the TOKIO_WORKER_THREADS environment variable. When neither is set, the number of physical CPU cores is used.",
-        long = "worker-threads"
+        help = "Number of native OS threads used by the async runtime (tokio). Defaults to the number of physical CPU cores.",
+        long = "worker-threads",
+        env = "TOKIO_WORKER_THREADS",
+        default_value_t = std::num::NonZeroUsize::new(num_cpus::get_physical())
+            .unwrap_or(std::num::NonZeroUsize::MIN)
     )]
-    pub worker_threads: Option<std::num::NonZeroUsize>,
+    pub worker_threads: std::num::NonZeroUsize,
 }
 
 pub async fn run(mut opts: Opts) -> anyhow::Result<()> {

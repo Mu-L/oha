@@ -9,19 +9,8 @@ fn main() {
         return;
     }
 
-    let num_workers_threads = opts
-        .worker_threads
-        .map(|n| n.get())
-        .or_else(|| {
-            std::env::var("TOKIO_WORKER_THREADS")
-                .ok()
-                .and_then(|s| s.parse().ok())
-        })
-        // Prefer to use physical cores rather than logical one because it's more performant empirically.
-        .unwrap_or_else(num_cpus::get_physical);
-
     let rt = tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(num_workers_threads)
+        .worker_threads(opts.worker_threads.get())
         .enable_all()
         .build()
         .unwrap();
