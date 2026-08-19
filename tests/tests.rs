@@ -65,6 +65,28 @@ fn test_no_color_cli_flag() {
     assert!(matches.get_flag("no_color"));
 }
 
+#[test]
+fn test_worker_threads_cli_flag() {
+    use clap::Parser;
+
+    // Defaults to the number of physical CPU cores when unset.
+    let opts = oha::Opts::try_parse_from(["oha", "http://example.com"]).unwrap();
+    assert_eq!(opts.worker_threads.get(), num_cpus::get_physical());
+
+    // A positive value is parsed.
+    let opts =
+        oha::Opts::try_parse_from(["oha", "--worker-threads", "4", "http://example.com"]).unwrap();
+    assert_eq!(opts.worker_threads.get(), 4);
+
+    // Zero and negative values are rejected.
+    assert!(
+        oha::Opts::try_parse_from(["oha", "--worker-threads", "0", "http://example.com"]).is_err()
+    );
+    assert!(
+        oha::Opts::try_parse_from(["oha", "--worker-threads", "-1", "http://example.com"]).is_err()
+    );
+}
+
 // Port 5111- is reserved for testing
 static PORT: AtomicU16 = AtomicU16::new(5111);
 
@@ -888,6 +910,16 @@ async fn test_query_limit() {
 async fn test_query_limit_with_time_limit() {
     // 1.75 qps for 2sec = expect 4 requests at times 0, 0.571, 1.142, 1,714sec
     assert_eq!(test_request_count(&["-z", "2s", "-q", "1.75"]).await, 4);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_worker_threads_fast_mode() {
+    // --no-tui fixed-count runs go through the fast-mode workers; pinning the
+    // runtime thread count with --worker-threads must not drop any requests.
+    assert_eq!(
+        test_request_count(&["-n", "20", "--worker-threads", "2"]).await,
+        20
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]

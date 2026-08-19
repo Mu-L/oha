@@ -332,6 +332,14 @@ Note: if used several times for the same host:port:target_host:target_port, a ra
         short = 'u'
     )]
     time_unit: Option<TimeScale>,
+    #[arg(
+        help = "Number of native OS threads used by the async runtime (tokio). Defaults to the number of physical CPU cores.",
+        long = "worker-threads",
+        env = "TOKIO_WORKER_THREADS",
+        default_value_t = std::num::NonZeroUsize::new(num_cpus::get_physical())
+            .unwrap_or(std::num::NonZeroUsize::MIN)
+    )]
+    pub worker_threads: std::num::NonZeroUsize,
 }
 
 pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
@@ -685,6 +693,7 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
                     n_requests,
                     n_connections,
                     n_http2_parallel,
+                    opts.worker_threads,
                 )
                 .await;
 
@@ -714,6 +723,7 @@ pub async fn run(mut opts: Opts) -> anyhow::Result<()> {
                     n_connections,
                     n_http2_parallel,
                     wait_ongoing_requests_after_deadline,
+                    opts.worker_threads,
                 )
                 .await;
 
