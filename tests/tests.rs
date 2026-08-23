@@ -602,6 +602,10 @@ async fn test_setting_method() {
         http::method::Method::GET
     );
     assert_eq!(
+        get_req("/", &["-m", "QUERY"]).await.method(),
+        http::method::Method::QUERY
+    );
+    assert_eq!(
         get_req("/", &["-m", "POST"]).await.method(),
         http::method::Method::POST
     );
@@ -641,6 +645,10 @@ async fn test_setting_method() {
     assert_eq!(
         get_req("/", &["--http2", "-m", "GET"]).await.method(),
         http::method::Method::GET
+    );
+    assert_eq!(
+        get_req("/", &["--http2", "-m", "QUERY"]).await.method(),
+        http::method::Method::QUERY
     );
     assert_eq!(
         get_req("/", &["--http2", "-m", "POST"]).await.method(),
