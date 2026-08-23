@@ -2,6 +2,7 @@
 
 # 1.16.0
 
+- Support HTTP QUERY method #894
 - Add `--worker-threads` option to set the number of worker threads #893
 - Tune HTTP/3 client performance #892
 - Avoid uncommon time scales (10s / 10m) in summary output #891
