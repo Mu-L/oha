@@ -1,13 +1,13 @@
 # Unreleased
 
-# 1.16.0
+# 1.16.0 (2026-08-23)
 
 - Support HTTP QUERY method #894
 - Add `--worker-threads` option to set the number of worker threads #893
 - Tune HTTP/3 client performance #892
 - Avoid uncommon time scales (10s / 10m) in summary output #891
 
-# 1.15.0
+# 1.15.0 (2026-07-11)
 
 - Change default redirect limit to 0 #887
 - Fix NO_COLOR environment handling #886
@@ -15,11 +15,11 @@
 - Cap connections to minimum needed #874
 - Add shell completion support #861
 
-# 1.14.0
+# 1.14.0 (2026-02-28)
 
 - fix Possible bug with latency_correction #857
 
-# 1.13.0 (2025-02-07)
+# 1.13.0 (2026-02-07)
 
 - Add first byte stats to JSON output#844
 - On http3, bind ipv6 for ipv6#839
